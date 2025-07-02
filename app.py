@@ -1,60 +1,61 @@
-
 from fastapi import FastAPI
 from pydantic import BaseModel
 import pickle
 import pandas as pd
 
-# ✅ Charger les modèles entraînés
-with open("ict_classifier.pkl", "rb") as f:
-    classifier_model = pickle.load(f)
+# ✅ Charger modèle
+with open("gold_entry_signal_model.pkl", "rb") as f:
+    model = pickle.load(f)
 
-with open("ict_tp_model.pkl", "rb") as f:
-    tp_model = pickle.load(f)
-
-with open("ict_sl_model.pkl", "rb") as f:
-    sl_model = pickle.load(f)
-
-# ✅ Créer l'application FastAPI
+# ✅ App FastAPI
 app = FastAPI(
-    title="ICT Trading Signal API",
-    description="API pour prédire direction, Take Profit et Stop Loss sur Gold",
+    title="Gold Entry Signal Predictor",
+    description="API for predicting trading signals based on EMA/RSI/MACD/ATR/Volatility",
     version="1.0"
 )
 
-# ✅ Définir le schéma des features d'entrée
-class ICTFeatures(BaseModel):
+# ✅ Schéma entrée
+class InputFeatures(BaseModel):
     rsi: float
     ema_9: float
     ema_21: float
     macd_line: float
+    atr: float
+    volatility_close_std: float
 
-# ✅ Endpoint racine
 @app.get("/")
-def read_root():
-    return {"message": "Welcome to ICT Trading Signal API!"}
+def home():
+    return {"message": "API is live. Use /predict endpoint."}
 
-# ✅ Endpoint de prédiction
 @app.post("/predict")
-def predict(features: ICTFeatures):
-    # Convertir les données en DataFrame
-    data = pd.DataFrame([features.dict()])
+def predict(features: InputFeatures):
+    # ✅ Convertir en dataframe
+    df_input = pd.DataFrame([features.dict()])
 
-    # Prediction Classification
-    pred_class = int(classifier_model.predict(data)[0])
-    pred_proba = float(classifier_model.predict_proba(data)[0][1])
+    # ✅ S'assurer que l'ordre des colonnes correspond
+    expected_cols = list(model.feature_names_in_)
+    df_input = df_input[expected_cols]
 
-    # Prediction Take Profit
-    predicted_tp = float(tp_model.predict(data)[0])
+    # ✅ Obtenir les probas pour chaque classe
+    proba = model.predict_proba(df_input)[0]
+    p_minus1 = proba[0]
+    p_0 = proba[1]
+    p_1 = proba[2]
 
-    # Prediction Stop Loss
-    predicted_sl = float(sl_model.predict(data)[0])
+    # ✅ Logique de signal
+    if p_1 > 0.5 and p_1 > p_minus1:
+        signal = "long"
+    elif p_minus1 > 0.5 and p_minus1 > p_1:
+        signal = "short"
+    else:
+        signal = "no_trade"
 
-    # Résultat complet
-    result = {
-        "prediction": pred_class,
-        "probability_of_increase": round(pred_proba * 100, 2),
-        "take_profit_suggestion": round(predicted_tp, 2),
-        "stop_loss_suggestion": round(predicted_sl, 2)
+    # ✅ Retour structuré
+    return {
+        "signal": signal,
+        "probabilities": {
+            "-1 (short)": round(p_minus1 * 100, 2),
+            "0 (no cross)": round(p_0 * 100, 2),
+            "+1 (long)": round(p_1 * 100, 2)
+        }
     }
-
-    return result
