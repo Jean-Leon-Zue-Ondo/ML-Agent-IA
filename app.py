@@ -3,49 +3,51 @@ from pydantic import BaseModel
 import pickle
 import pandas as pd
 
-# ✅ Charger modèle
-with open("gold_entry_signal_model.pkl", "rb") as f:
+# ✅ Charger le modèle binaire (2 classes : -1, +1)
+with open("gold_cross_prediction_model.pkl", "rb") as f:
     model = pickle.load(f)
 
 # ✅ App FastAPI
 app = FastAPI(
-    title="Gold Entry Signal Predictor",
-    description="API for predicting trading signals based on EMA/RSI/MACD/ATR/Volatility",
+    title="Gold Price Direction Predictor",
+    description="API to predict probability of gold price going up or down in next 12x5min candles.",
     version="1.0"
 )
 
-# ✅ Schéma entrée
+# ✅ Schéma d'entrée EXACT des features utilisées au training
 class InputFeatures(BaseModel):
     rsi: float
     ema_9: float
     ema_21: float
+    ema_distance: float
     macd_line: float
     atr: float
     volatility_close_std: float
+    ema_9_slope: float
+    ema_21_slope: float
 
 @app.get("/")
 def home():
-    return {"message": "API is live. Use /predict endpoint."}
+    return {"message": "API is live. Use POST /predict with your features."}
 
 @app.post("/predict")
 def predict(features: InputFeatures):
     # ✅ Convertir en dataframe
     df_input = pd.DataFrame([features.dict()])
 
-    # ✅ S'assurer que l'ordre des colonnes correspond
+    # ✅ Assurer l'ordre des colonnes
     expected_cols = list(model.feature_names_in_)
     df_input = df_input[expected_cols]
 
-    # ✅ Obtenir les probas pour chaque classe
+    # ✅ Obtenir les probas pour les 2 classes [-1, +1]
     proba = model.predict_proba(df_input)[0]
-    p_minus1 = proba[0]
-    p_0 = proba[1]
-    p_1 = proba[2]
+    p_baisse = proba[0]
+    p_hausse = proba[1]
 
     # ✅ Logique de signal
-    if p_1 > 0.5 and p_1 > p_minus1:
+    if p_hausse > 0.5 and p_hausse > p_baisse:
         signal = "long"
-    elif p_minus1 > 0.5 and p_minus1 > p_1:
+    elif p_baisse > 0.5 and p_baisse > p_hausse:
         signal = "short"
     else:
         signal = "no_trade"
@@ -54,8 +56,7 @@ def predict(features: InputFeatures):
     return {
         "signal": signal,
         "probabilities": {
-            "-1 (short)": round(p_minus1 * 100, 2),
-            "0 (no cross)": round(p_0 * 100, 2),
-            "+1 (long)": round(p_1 * 100, 2)
+            "-1 (BAISSE)": round(p_baisse * 100, 2),
+            "+1 (HAUSSE)": round(p_hausse * 100, 2)
         }
     }
