@@ -4,7 +4,7 @@ import pickle
 import pandas as pd
 
 # ✅ Charger le modèle binaire (2 classes : -1, +1)
-with open("gold_cross_prediction_model.pkl", "rb") as f:
+with open("gold_binary_hausse_baisse_model.pkl", "rb") as f:
     model = pickle.load(f)
 
 # ✅ App FastAPI
